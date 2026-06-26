@@ -1,0 +1,1053 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Telecom Murder Board</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #1a1008;
+    font-family: 'Courier New', monospace;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+    color: #e8d5b0;
+  }
+
+  #svg-container { width: 100%; height: 100%; cursor: grab; }
+  #svg-container:active { cursor: grabbing; }
+
+  /* ── Controls ── */
+  #controls {
+    position: fixed;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 200;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    background: rgba(20,12,4,0.92);
+    border: 1px solid #6b4c2a;
+    border-radius: 6px;
+    padding: 8px 14px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.7);
+  }
+
+  #search-input {
+    background: #2a1a08;
+    border: 1px solid #6b4c2a;
+    border-radius: 4px;
+    color: #e8d5b0;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    padding: 5px 10px;
+    width: 200px;
+    outline: none;
+  }
+  #search-input:focus { border-color: #c8a060; }
+  #search-input::placeholder { color: #6b4c2a; }
+
+  .ctrl-sep {
+    width: 1px; height: 20px;
+    background: #3a2a10;
+    flex-shrink: 0;
+  }
+
+  .filter-btn {
+    background: #2a1a08;
+    border: 1px solid #6b4c2a;
+    border-radius: 4px;
+    color: #c8a060;
+    cursor: pointer;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    padding: 5px 10px;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .filter-btn:hover { background: #3a2a10; border-color: #c8a060; }
+  .filter-btn.active { background: #c8a060; color: #1a0e04; border-color: #c8a060; }
+
+  /* galaxy button gets its own accent */
+  .galaxy-btn {
+    background: #0d1a10;
+    border: 1px solid #2a5a30;
+    color: #4ade80;
+  }
+  .galaxy-btn:hover { background: #132018; border-color: #4ade80; }
+  .galaxy-btn.active { background: #4ade80; color: #061008; border-color: #4ade80; }
+
+  #progress-text {
+    font-size: 13px;
+    color: #8a6a40;
+    white-space: nowrap;
+    min-width: 90px;
+  }
+
+  /* ── Sidebar ── */
+  #tooltip {
+    position: fixed;
+    right: 14px;
+    top: 12px;
+    width: 320px;
+    background: rgba(12,8,3,0.97);
+    border: 1px solid #6b4c2a;
+    border-radius: 6px;
+    padding: 14px;
+    z-index: 300;
+    display: none;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.8);
+    max-height: 85vh;
+    overflow-y: auto;
+  }
+  #tooltip h3 { font-size: 18px; color: #f0c060; margin-bottom: 6px; line-height: 1.3; }
+  #tooltip .cat-badge {
+    display: inline-block; font-size: 13px; padding: 2px 7px;
+    border-radius: 10px; margin-bottom: 8px; font-weight: bold; letter-spacing: 0.5px;
+  }
+  #tooltip .desc { font-size: 15px; color: #b09070; line-height: 1.6; margin-bottom: 10px; }
+  #tooltip .connections-title {
+    font-size: 13px; color: #8a6a40; text-transform: uppercase;
+    letter-spacing: 1px; margin-bottom: 6px;
+    border-top: 1px solid #3a2a10; padding-top: 8px;
+  }
+  #tooltip .conn-item {
+    font-size: 14px; color: #c8a060; padding: 3px 0;
+    cursor: pointer; display: flex; align-items: center; gap: 6px;
+  }
+  #tooltip .conn-item:hover { color: #f0c060; }
+  #tooltip .conn-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  #tooltip .conn-label { font-size: 12px; opacity: 0.6; font-style: italic; }
+  #learn-btn {
+    width: 100%; margin-top: 10px; padding: 7px;
+    background: #2a1a08; border: 1px solid #6b4c2a; border-radius: 4px;
+    color: #c8a060; cursor: pointer;
+    font-family: 'Courier New', monospace; font-size: 15px; transition: all 0.15s;
+  }
+  #learn-btn:hover { background: #3a2810; }
+  #learn-btn.learned { background: #1a3a10; border-color: #4a8a30; color: #80c050; }
+
+  /* ── Legend ── */
+  #legend {
+    position: fixed;
+    bottom: 12px; left: 12px;
+    background: rgba(12,8,3,0.92);
+    border: 1px solid #6b4c2a;
+    border-radius: 6px;
+    padding: 10px 14px;
+    z-index: 200;
+    max-width: 620px;
+  }
+  .legend-item {
+    display: flex; align-items: center; gap: 5px;
+    font-size: 13px; color: #8a6a40;
+    cursor: pointer; transition: color 0.15s;
+  }
+  .legend-item:hover { color: #e8d5b0; }
+  .legend-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+
+  /* ── Panel toggles ── */
+  .panel-header {
+    display: flex; justify-content: space-between; align-items: center;
+    cursor: pointer; user-select: none; color: #8a6a40; gap: 12px;
+  }
+  .panel-header:hover { color: #c8a060; }
+  .panel-header strong { color: inherit; }
+  #path-hint-body { margin-top: 6px; }
+  #legend-arrow, #path-hint-arrow { font-size: 11px; opacity: 0.7; }
+
+  /* ── SVG node styles ── */
+  .node-card { cursor: pointer; transition: opacity 0.2s; }
+  .node-card.learned rect { stroke-dasharray: none !important; }
+  .link-line { transition: opacity 0.2s; }
+
+  /* ── Tips ── */
+  #path-hint {
+    position: fixed;
+    bottom: 12px; right: 14px;
+    background: rgba(12,8,3,0.92);
+    border: 1px solid #3a2a10;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 14px;
+    color: #6b4c2a;
+    z-index: 200;
+    max-width: 260px;
+    line-height: 1.6;
+  }
+  #path-hint strong { color: #8a6a40; }
+
+  #reset-btn {
+    position: fixed; top: 60px; left: 12px;
+    background: rgba(20,12,4,0.85);
+    border: 1px solid #3a2a10; border-radius: 4px;
+    color: #6b4c2a; cursor: pointer;
+    font-family: 'Courier New', monospace;
+    font-size: 11px; padding: 5px 9px; z-index: 200; transition: all 0.15s;
+  }
+  #reset-btn:hover { border-color: #6b4c2a; color: #c8a060; }
+</style>
+</head>
+<body>
+
+<div id="controls">
+  <span style="font-size:12px;color:#8a6a40">🔍</span>
+  <input id="search-input" type="text" placeholder="Search concepts…" />
+  <button class="filter-btn active" id="btn-all"      onclick="filterCategory('all')">All</button>
+  <button class="filter-btn"        id="btn-learned"  onclick="filterCategory('learned')">Learned</button>
+  <button class="filter-btn"        id="btn-unlearned"onclick="filterCategory('unlearned')">To Learn</button>
+  <div class="ctrl-sep"></div>
+  <button class="filter-btn galaxy-btn" id="btn-galaxy" onclick="toggleGalaxyView()">✦ Galaxy</button>
+  <span id="progress-text">0 / 0 learned</span>
+</div>
+
+<button id="reset-btn" onclick="resetView()">↺ Reset view</button>
+
+<div id="tooltip">
+  <h3 id="tt-title"></h3>
+  <span id="tt-badge" class="cat-badge"></span>
+  <p id="tt-desc" class="desc"></p>
+  <div id="tt-connections"></div>
+  <button id="learn-btn" onclick="toggleLearned()">Mark as Learned</button>
+</div>
+
+<div id="legend"></div>
+
+<div id="path-hint">
+  <div class="panel-header" onclick="togglePanel('path-hint')">
+    <strong>Tips</strong><span id="path-hint-arrow">▾</span>
+  </div>
+  <div id="path-hint-body">
+    Click a node to explore connections.<br>
+    Double-click to focus &amp; zoom.<br>
+    Drag to pan · Scroll to zoom.
+  </div>
+</div>
+
+<svg id="svg-container"></svg>
+
+<script>
+// ════════════════════════════════════════════════════════════
+// DATA
+// ════════════════════════════════════════════════════════════
+
+const CATEGORIES = {
+  fundamentals:   { label: "Fundamentals",         color: "#4a9eff" },
+  sms:            { label: "SMS & Messaging",       color: "#ff7f50" },
+  infrastructure: { label: "Infrastructure",        color: "#a78bfa" },
+  ai:             { label: "AI & Voice Tech",       color: "#34d399" },
+  business:       { label: "Business Models",       color: "#fbbf24" },
+  regulatory:     { label: "Regulatory & Legal",    color: "#f87171" },
+  privacy:        { label: "Privacy & Compliance",  color: "#fb923c" },
+  market:         { label: "Market & Industry",     color: "#60a5fa" },
+  standards:      { label: "Standards & Protocols", color: "#c084fc" },
+  tools:          { label: "Dev Tools",             color: "#4ade80" },
+};
+
+const REL_COLORS = {
+  requires:   "#4a9eff",
+  enables:    "#34d399",
+  regulates:  "#f87171",
+  implements: "#c084fc",
+  competes:   "#fbbf24",
+  part_of:    "#fb923c",
+  related:    "#8a8a8a",
+};
+
+const nodes = [
+  // FUNDAMENTALS
+  { id:"voip",           label:"VoIP",                      cat:"fundamentals",   desc:"Voice over Internet Protocol — transmitting voice calls as data packets over IP networks instead of traditional circuit-switched PSTN lines." },
+  { id:"sip",            label:"SIP",                       cat:"fundamentals",   desc:"Session Initiation Protocol — the dominant signaling protocol for initiating, maintaining, and terminating VoIP calls and multimedia sessions." },
+  { id:"sip_trunking",   label:"SIP Trunking",              cat:"fundamentals",   desc:"Connecting a business PBX to the PSTN via an IP connection using SIP. Replaces traditional PRI/T1 lines with internet-based trunks." },
+  { id:"pstn",           label:"PSTN",                      cat:"fundamentals",   desc:"Public Switched Telephone Network — the legacy global circuit-switched telephone system built on copper wires and SS7 signaling." },
+  { id:"pbx",            label:"PBX",                       cat:"fundamentals",   desc:"Private Branch Exchange — a business phone system that switches calls between internal extensions and connects to outside lines." },
+  { id:"cloud_pbx",      label:"Cloud PBX",                 cat:"fundamentals",   desc:"A PBX hosted in the cloud rather than on-premise. Eliminates hardware maintenance; provider manages updates and redundancy." },
+  { id:"did",            label:"DID",                       cat:"fundamentals",   desc:"Direct Inward Dialing — a service allowing direct calls to individual extensions without going through a receptionist. Mapped to E.164 numbers." },
+  { id:"number_prov",    label:"Number Provisioning",       cat:"fundamentals",   desc:"The process of acquiring and configuring telephone numbers from carriers or number administrators (NANPA) for use in a telecom system." },
+  { id:"lnp",            label:"LNP / Number Porting",      cat:"fundamentals",   desc:"Local Number Portability — FCC-mandated right to keep your phone number when switching carriers. Critical for VoIP providers to support." },
+  { id:"tollfree",       label:"Toll-free Numbers",         cat:"fundamentals",   desc:"Numbers prefixed 800/888/877 etc. where the called party pays. Requires RespOrg designation and special routing through the PSTN." },
+  { id:"e164",           label:"E.164 Formatting",          cat:"fundamentals",   desc:"The ITU standard for international phone number formatting: +[country code][subscriber number], e.g. +15551234567. Universal format for VoIP." },
+  { id:"dtmf",           label:"DTMF",                      cat:"fundamentals",   desc:"Dual-Tone Multi-Frequency — the touch-tone signaling system. Each key generates two simultaneous audio tones. Used by IVR systems to detect input." },
+  { id:"ivr",            label:"IVR",                       cat:"fundamentals",   desc:"Interactive Voice Response — automated phone menus that let callers navigate options via DTMF or voice. Backbone of call center self-service." },
+  { id:"acd",            label:"ACD",                       cat:"fundamentals",   desc:"Automatic Call Distribution — routes incoming calls to the appropriate agent or queue based on rules (skills, availability, priority)." },
+  { id:"call_routing",   label:"Call Routing",              cat:"fundamentals",   desc:"Rules-based logic determining how calls are directed — by time of day, caller ID, IVR selection, agent skills, or geographic region." },
+  { id:"failover",       label:"Failover Routing",          cat:"fundamentals",   desc:"Automatic rerouting of calls to a backup destination if the primary path fails. Critical for SLA compliance and uptime guarantees." },
+  { id:"latency_jitter", label:"Latency & Jitter",          cat:"fundamentals",   desc:"Latency = delay in packet delivery. Jitter = variation in that delay. Both degrade voice quality. Target: <150ms one-way, <30ms jitter." },
+  { id:"codecs",         label:"Codecs (G.711/G.729/Opus)", cat:"fundamentals",   desc:"Audio compression algorithms. G.711 = uncompressed, best quality. G.729 = compressed, low bandwidth. Opus = modern, adaptive, ideal for WebRTC." },
+  { id:"rtp",            label:"RTP",                       cat:"fundamentals",   desc:"Real-time Transport Protocol — carries the actual audio/video data in VoIP calls. Works alongside RTCP for quality monitoring." },
+  { id:"webrtc",         label:"WebRTC",                    cat:"fundamentals",   desc:"Web Real-Time Communication — browser-native API for peer-to-peer voice, video, and data. Enables softphones without plugins. Uses ICE/STUN/TURN." },
+  // SMS
+  { id:"a2p",            label:"A2P SMS",                   cat:"sms",            desc:"Application-to-Person messaging — automated texts sent by businesses to consumers (alerts, OTPs, marketing). Subject to 10DLC registration and TCPA." },
+  { id:"p2p",            label:"P2P SMS",                   cat:"sms",            desc:"Person-to-Person messaging — human-to-human texting. Carriers monitor for bot-like patterns and convert P2P traffic detected as A2P." },
+  { id:"10dlc",          label:"10DLC Registration",        cat:"sms",            desc:"10-Digit Long Code — the US carrier system requiring businesses to register brand and campaign info before sending A2P SMS at scale. Reduces spam." },
+  { id:"shortcodes",     label:"Short/Long/TF Codes",       cat:"sms",            desc:"Short codes (5-6 digits) offer highest A2P throughput. Long codes (10DLC) are cheaper. Toll-free SMS is mid-tier option." },
+  { id:"tcpa",           label:"TCPA",                      cat:"sms",            desc:"Telephone Consumer Protection Act — US law requiring prior express written consent before sending marketing texts or robocalls. $500–$1500 per violation." },
+  { id:"carrier_filter", label:"Carrier Filtering",         cat:"sms",            desc:"Carriers use ML to detect and block spam SMS. Unregistered traffic, URL shorteners, and high send rates trigger filtering." },
+  { id:"sms_agg",        label:"SMS Aggregators",           cat:"sms",            desc:"Intermediaries between businesses and mobile carriers. Handle carrier relationships, throughput management, and 10DLC registration." },
+  { id:"rcs",            label:"RCS",                       cat:"sms",            desc:"Rich Communication Services — SMS successor with read receipts, typing indicators, images, and buttons. Now supported natively on iOS and Android." },
+  { id:"mms",            label:"MMS",                       cat:"sms",            desc:"Multimedia Messaging Service — extends SMS to support images, video, and audio. Lower throughput than SMS; separate content-type handling in APIs." },
+  // INFRASTRUCTURE
+  { id:"cpaas",          label:"CPaaS",                     cat:"infrastructure", desc:"Communications Platform as a Service — cloud APIs for voice, SMS, video. Pay-per-use, no telecom infrastructure needed. Think Twilio, Telnyx, Vonage." },
+  { id:"ucaas",          label:"UCaaS",                     cat:"infrastructure", desc:"Unified Communications as a Service — bundles voice, video, messaging, and collaboration. Think RingCentral, Teams Phone, Zoom Phone." },
+  { id:"ccaas",          label:"CCaaS",                     cat:"infrastructure", desc:"Contact Center as a Service — cloud-delivered call center platform. Includes ACD, IVR, workforce management. Think Five9, Genesys, NICE." },
+  { id:"wholesale_voip", label:"Wholesale VoIP",            cat:"infrastructure", desc:"High-volume IP voice termination and origination sold between carriers. Priced per-minute, traded on exchanges. The plumbing under CPaaS." },
+  { id:"tiers",          label:"Tier 1/2/3 Carriers",       cat:"infrastructure", desc:"Tier 1: own global backbone, no transit payments (AT&T, NTT). Tier 2: buy some transit. Tier 3: fully buy transit. Affects cost and quality." },
+  { id:"peering",        label:"Peering Agreements",        cat:"infrastructure", desc:"Bilateral agreements between carriers to exchange traffic directly without payment. Reduces latency and cost vs. buying transit." },
+  { id:"ss7",            label:"SS7",                       cat:"infrastructure", desc:"Signaling System 7 — the protocol controlling PSTN call setup, routing, and SMS. Legacy but still foundational; notoriously vulnerable to interception." },
+  { id:"enum_tech",      label:"ENUM",                      cat:"infrastructure", desc:"E.164 Number Mapping — DNS-based system translating phone numbers into URIs. Enables VoIP carriers to route calls without touching the PSTN." },
+  { id:"media_server",   label:"Media Servers",             cat:"infrastructure", desc:"Handle audio/video processing in VoIP — transcoding, recording, conferencing, IVR prompts. Freeswitch and Asterisk are common bases." },
+  { id:"sbc",            label:"SBC",                       cat:"infrastructure", desc:"Session Border Controller — sits at the edge of VoIP networks. Enforces security, performs NAT traversal, transcodes, and controls QoS." },
+  { id:"softswitch",     label:"Softswitch",                cat:"infrastructure", desc:"Software replacing a hardware telephone switch. Controls call routing between VoIP and PSTN. Class 4 = inter-carrier. Class 5 = end-user features." },
+  { id:"asterisk",       label:"Asterisk",                  cat:"infrastructure", desc:"Open-source PBX software by Digium/Sangoma. Hugely popular for building custom VoIP systems. Uses dialplan scripting. Runs on Linux." },
+  { id:"freeswitch",     label:"FreeSWITCH",                cat:"infrastructure", desc:"Open-source media server and softswitch. More scalable than Asterisk for carrier use cases. Used by many CPaaS providers internally." },
+  { id:"kamailio",       label:"Kamailio",                  cat:"infrastructure", desc:"High-performance open-source SIP proxy and registrar. Can handle millions of calls per second. Used at carrier scale for routing and load balancing." },
+  { id:"redundancy",     label:"Redundancy & Failover",     cat:"infrastructure", desc:"Architectural patterns: active-active, active-passive, geographic redundancy. Essential for 99.99% uptime SLAs in telecom." },
+  { id:"colocation",     label:"Colo vs Cloud-hosted",      cat:"infrastructure", desc:"Co-location: your hardware in a data center. Cloud-hosted: virtual machines. Colo offers more control and lower latency; cloud offers elasticity." },
+  // AI
+  { id:"ai_agents",      label:"AI Voice Agents",           cat:"ai",             desc:"Fully automated voice bots that can handle inbound/outbound calls end-to-end using LLMs, STT, and TTS. Replacing traditional IVR for complex flows." },
+  { id:"llm_voice",      label:"LLM Integration",           cat:"ai",             desc:"Using large language models (GPT-4, Claude, Gemini) as the 'brain' of a voice agent — interpreting intent, generating responses, managing conversation state." },
+  { id:"stt",            label:"STT (Speech-to-Text)",      cat:"ai",             desc:"Converts spoken audio to text. Key providers: Deepgram (fastest, telecom-optimized), OpenAI Whisper (open-source), Google Speech-to-Text, AssemblyAI." },
+  { id:"tts",            label:"TTS (Text-to-Speech)",      cat:"ai",             desc:"Converts text to natural-sounding speech. Key providers: ElevenLabs (most natural), PlayHT, Azure Neural TTS, Google WaveNet, LMNT, Cartesia." },
+  { id:"nlu",            label:"NLU",                       cat:"ai",             desc:"Natural Language Understanding — extracting intent and entities from speech. Sits between STT output and application logic. Used in IVR modernization." },
+  { id:"conv_ai",        label:"Conversational AI",         cat:"ai",             desc:"The broader discipline of building dialogue systems — managing context, state, multi-turn conversations, and fallback handling." },
+  { id:"turn_taking",    label:"Turn-taking Detection",     cat:"ai",             desc:"Determining when a caller has finished speaking so the bot can respond. Key latency driver. Uses VAD (Voice Activity Detection) and end-of-utterance models." },
+  { id:"interruption",   label:"Interruption Handling",     cat:"ai",             desc:"Detecting when a caller speaks over the bot and gracefully yielding or cutting off the bot's response. Critical for natural-feeling conversations." },
+  { id:"sentiment",      label:"Sentiment Analysis",        cat:"ai",             desc:"Analyzing the emotional tone of a call in real-time or post-call. Used for QA scoring, agent coaching, and escalation triggers." },
+  { id:"vcon",           label:"vCon Standard",             cat:"ai",             desc:"Virtual Conversation — IETF draft standard for a universal JSON format representing a conversation with transcript, media, metadata, and analysis." },
+  { id:"transcription",  label:"Call Transcription",        cat:"ai",             desc:"Converting full calls to text. Real-time: enables live agent assist. Post-call: enables search, compliance, QA. Key differentiator between STT providers." },
+  { id:"diarization",    label:"Speaker Diarization",       cat:"ai",             desc:"Identifying and segmenting speakers in a recording ('Speaker 1 said... Speaker 2 said...'). Essential for multi-party call transcription." },
+  { id:"webhook_voice",  label:"Webhook Architecture",      cat:"ai",             desc:"How CPaaS platforms notify your application of call events (answer, DTMF, hangup) via HTTP POST. Low latency webhook handling is critical for voice bots." },
+  { id:"low_latency",    label:"Low-latency AI Inference",  cat:"ai",             desc:"The race to minimize STT + LLM + TTS round-trip time. Target <500ms end-to-end. Techniques: streaming, edge inference, response pre-generation." },
+  { id:"vapi",           label:"Vapi.ai",                   cat:"ai",             desc:"CPaaS-like platform specifically for AI voice agents. Handles telephony, STT, LLM, TTS orchestration in one API. Popular for rapid deployment." },
+  { id:"retell",         label:"Retell AI",                 cat:"ai",             desc:"Competitor to Vapi. Focuses on low-latency voice agent infrastructure with pre-built integrations for common LLM/STT/TTS providers." },
+  { id:"bland",          label:"Bland AI",                  cat:"ai",             desc:"Outbound AI calling platform. Focus on sales and support automation at scale. Offers simple API for launching outbound campaigns." },
+  { id:"deepgram",       label:"Deepgram",                  cat:"ai",             desc:"Leading STT provider for real-time telecom use cases. Offers streaming transcription with <300ms latency, phone-call-optimized models, and diarization." },
+  { id:"elevenlabs",     label:"ElevenLabs",                cat:"ai",             desc:"TTS provider known for hyper-realistic voice cloning and synthesis. Offers streaming API. Higher cost; best quality for consumer-facing voice agents." },
+  // BUSINESS
+  { id:"reseller",       label:"Reseller / White-label",    cat:"business",       desc:"Buying wholesale telecom capacity and reselling it under your own brand. Common in VoIP, UCaaS. Margins depend on volume and differentiation." },
+  { id:"mvno",           label:"MVNO",                      cat:"business",       desc:"Mobile Virtual Network Operator — provides mobile service using another carrier's network (AT&T, T-Mobile). Examples: Mint Mobile, Google Fi." },
+  { id:"mvne",           label:"MVNE",                      cat:"business",       desc:"Mobile Virtual Network Enabler — provides back-office infrastructure for MVNOs: billing, SIM management, network access. The B2B layer under MVNOs." },
+  { id:"var",            label:"VAR",                       cat:"business",       desc:"Value Added Reseller — adds services or customization on top of a carrier's raw product before reselling. Justifies higher margin." },
+  { id:"usage_pricing",  label:"Usage-based Pricing",       cat:"business",       desc:"Charging per minute, per message, or per API call. Preferred by developers and startups. CPaaS norm. Aligns cost with value delivered." },
+  { id:"flat_pricing",   label:"Flat-rate Pricing",         cat:"business",       desc:"Fixed monthly fee for unlimited or capped usage. Preferred by enterprises for predictability. UCaaS standard (per seat/month)." },
+  { id:"mrr",            label:"MRR / ARR",                 cat:"business",       desc:"Monthly/Annual Recurring Revenue — the key SaaS/telecom health metrics. ARR = MRR × 12. Investors care deeply about growth rate and net dollar retention." },
+  { id:"churn",          label:"Churn Rate",                cat:"business",       desc:"Percentage of customers or revenue lost per period. In telecom, logo churn (customers) and revenue churn are both tracked. 2-5% monthly is high." },
+  { id:"cac_ltv",        label:"CAC & LTV",                 cat:"business",       desc:"Customer Acquisition Cost vs Lifetime Value. Healthy SaaS needs LTV:CAC > 3:1. Telecom has high switching costs — LTV can be very high." },
+  { id:"gross_margin",   label:"Gross Margin",              cat:"business",       desc:"Wholesale VoIP has thin margins (5-20%). CPaaS layers software margin on top (50-70%). AI value-add can push blended margins higher." },
+  // REGULATORY
+  { id:"fcc",            label:"FCC",                       cat:"regulatory",     desc:"Federal Communications Commission — US regulator governing interstate and international communications. Enforces telecom law, licensing, consumer protection." },
+  { id:"stir_shaken",    label:"STIR/SHAKEN",               cat:"regulatory",     desc:"Call authentication framework mandated by FCC. Carriers cryptographically sign calls to verify caller ID. Attestation levels: A (full), B (partial), C (gateway)." },
+  { id:"robocall_regs",  label:"Robocall Regulations",      cat:"regulatory",     desc:"FCC rules under TRACED Act and Truth in Caller ID Act prohibiting spoofed caller ID, requiring STIR/SHAKEN, and mandating call blocking tools." },
+  { id:"traced_act",     label:"TRACED Act",                cat:"regulatory",     desc:"2019 law requiring FCC to mandate STIR/SHAKEN, increasing penalties for illegal robocalls, and establishing inter-agency coordination." },
+  { id:"calea",          label:"CALEA",                     cat:"regulatory",     desc:"Communications Assistance for Law Enforcement Act — requires telecom providers to build in lawful intercept capabilities for law enforcement wiretapping." },
+  { id:"e911",           label:"E911 / 911 Obligations",    cat:"regulatory",     desc:"VoIP providers must provide Enhanced 911 that delivers caller location to emergency services. Non-compliance is a serious FCC violation." },
+  { id:"karis_law",      label:"Kari's Law / Ray Baum's",   cat:"regulatory",     desc:"Kari's Law: multi-line phone systems must allow direct 911 dialing without a prefix. Ray Baum's Act: must transmit dispatchable location to 911." },
+  { id:"usf",            label:"Universal Service Fund",    cat:"regulatory",     desc:"FCC-administered fund requiring carriers to contribute to programs like E-Rate (schools), LifeLine (low-income), and Connect America (rural broadband)." },
+  { id:"section_214",    label:"Section 214 Auth",          cat:"regulatory",     desc:"FCC license required for international voice services. US carriers providing international VoIP termination must hold Section 214 authorization." },
+  { id:"nanpa",          label:"NANPA",                     cat:"regulatory",     desc:"North American Numbering Plan Administrator — manages the allocation of telephone numbers (area codes, prefixes) across the US, Canada, and Caribbean." },
+  { id:"telecom_act",    label:"Telecom Act 1996",          cat:"regulatory",     desc:"Landmark deregulation law opening local telephone markets to competition, creating CLECs, and governing internet regulation through Title I/II framework." },
+  { id:"cpni_rule",      label:"CPNI (FCC Rules)",          cat:"regulatory",     desc:"Customer Proprietary Network Information — FCC rules restricting how carriers can use/share calling records. Carriers need opt-in consent for marketing." },
+  { id:"gdpr_telecom",   label:"GDPR for US Telecom",       cat:"regulatory",     desc:"If serving EU customers, GDPR requires consent for call recording, data minimization, right to erasure. Applies to US CPaaS with EU traffic." },
+  // PRIVACY
+  { id:"hipaa",          label:"HIPAA",                     cat:"privacy",        desc:"Health Insurance Portability and Accountability Act — governs protection of Protected Health Information (PHI). Telecom handling healthcare calls must comply." },
+  { id:"baa",            label:"BAA",                       cat:"privacy",        desc:"Business Associate Agreement — contract required between a HIPAA-covered entity and any vendor (including your telecom provider) handling PHI." },
+  { id:"phi",            label:"PHI",                       cat:"privacy",        desc:"Protected Health Information — any individually identifiable health data. Call recordings mentioning diagnoses, medications, or appointments qualify as PHI." },
+  { id:"cpni",           label:"CPNI",                      cat:"privacy",        desc:"Customer Proprietary Network Information — call records, usage data, and location info held by carriers. Strongly protected under FCC rules." },
+  { id:"ccpa",           label:"CCPA",                      cat:"privacy",        desc:"California Consumer Privacy Act — gives CA residents rights over their personal data. Telecom companies must honor opt-outs and deletion requests." },
+  { id:"data_retention", label:"Data Retention Policies",   cat:"privacy",        desc:"How long call recordings, CDRs, and transcripts are stored. HIPAA: 6 years. TCPA litigation risk: 4 years. Business need vs. liability tradeoff." },
+  { id:"encryption_voip",label:"Encryption in VoIP",        cat:"privacy",        desc:"SRTP (Secure RTP) encrypts media. TLS/SIPS encrypts SIP signaling. End-to-end encryption is rarely achieved in PSTN-connected calls." },
+  { id:"soc2",           label:"SOC 2 Compliance",          cat:"privacy",        desc:"AICPA audit framework covering security, availability, and confidentiality. Enterprise customers require SOC 2 Type II from their telecom vendors." },
+  // MARKET
+  { id:"ilec",           label:"ILECs",                     cat:"market",         desc:"Incumbent Local Exchange Carriers — the original wireline monopolies (AT&T, Verizon). Still dominant in last-mile access and wholesale interconnection." },
+  { id:"clec",           label:"CLECs",                     cat:"market",         desc:"Competitive Local Exchange Carriers — competitors to ILECs created by the Telecom Act 1996. Must get interconnection and number access from ILECs." },
+  { id:"ixc",            label:"IXCs",                      cat:"market",         desc:"Interexchange Carriers — long-distance carriers (historically AT&T, MCI/Worldcom). Now mostly subsumed into ILECs or wholesale VoIP." },
+  { id:"cpaas_market",   label:"CPaaS Market Size",         cat:"market",         desc:"CPaaS market ~$20B+ and growing ~25% annually. Twilio dominates, followed by Vonage/Ericsson, Telnyx, Bandwidth. AI is the next growth vector." },
+  { id:"ai_voice_market",label:"AI Voice Agent Market",     cat:"market",         desc:"Early-stage, growing rapidly. Estimated $3B+ by 2025, heading toward $50B+ by 2030 as AI replaces traditional IVR and contact center agents." },
+  { id:"healthcare_comms",label:"Healthcare Comms Market",  cat:"market",         desc:"High-value vertical requiring HIPAA compliance. Telehealth, appointment reminders, medication adherence calls. Large per-call value justifies compliance overhead." },
+  { id:"smb_market",     label:"SMB Telecom Market",        cat:"market",         desc:"Small/medium businesses: the largest volume segment. Price sensitive, want simplicity. Cloud PBX/UCaaS is taking share from on-prem systems rapidly." },
+  { id:"nojitter",       label:"NoJitter / UCToday",        cat:"market",         desc:"Leading trade publications for enterprise communications. NoJitter covers UCaaS/CCaaS decisions. Good for market intelligence and analyst quotes." },
+  // STANDARDS
+  { id:"ietf",           label:"IETF",                      cat:"standards",      desc:"Internet Engineering Task Force — develops open internet standards. Governs SIP (RFC 3261), RTP (RFC 3550), ENUM (RFC 3761), and the vCon draft." },
+  { id:"rfc3261",        label:"RFC 3261 (SIP spec)",       cat:"standards",      desc:"The core SIP specification defining the protocol syntax, semantics, and call flow state machine. Required reading for serious VoIP engineers." },
+  { id:"rfc3550",        label:"RFC 3550 (RTP spec)",       cat:"standards",      desc:"Defines RTP for real-time media transport and RTCP for quality monitoring. Foundational for understanding VoIP media paths." },
+  { id:"stir_spec",      label:"STIR/SHAKEN Tech Spec",     cat:"standards",      desc:"ATIS and SIP Forum technical standards implementing STIR/SHAKEN. Uses JSON Web Tokens (PASSporT) to carry call attestation in SIP headers." },
+  { id:"webrtc_std",     label:"WebRTC Standards (W3C)",    cat:"standards",      desc:"W3C and IETF co-govern WebRTC. Key specs: getUserMedia, RTCPeerConnection, ICE (RFC 8445), DTLS-SRTP. Browser interop is now excellent." },
+  { id:"openapi_cpaas",  label:"OpenAPI for CPaaS",         cat:"standards",      desc:"REST API design patterns for telecom: idempotent webhooks, E.164 numbers, CDR formats, async call control. Twilio's API set the industry template." },
+  { id:"vcon_standard",  label:"vCon (IETF Draft)",         cat:"standards",      desc:"A JSON container for conversations — links together transcript, recording, parties, analysis, and metadata. Aims to make conversation data portable." },
+  // TOOLS
+  { id:"twilio_api",     label:"Twilio API",                cat:"tools",          desc:"The dominant CPaaS API. TwiML (XML), REST calls, and webhooks. Best developer docs. Most expensive. The reference implementation for CPaaS design." },
+  { id:"telnyx_api",     label:"Telnyx API",                cat:"tools",          desc:"Strong Twilio alternative. Owns more network infrastructure (Tier 1 carrier), offers lower pricing. Good for high-volume voice and messaging." },
+  { id:"vonage_api",     label:"Vonage / Ericsson API",     cat:"tools",          desc:"Formerly Nexmo. Acquired by Ericsson. Strong in Europe. NCCO (Nexmo Call Control Objects) for call flow. Broad carrier network." },
+  { id:"bandwidth_api",  label:"Bandwidth API",             cat:"tools",          desc:"Carrier-grade CPaaS. Owns CLEC licenses and number inventory directly. Used by companies that need to be close to the PSTN at scale." },
+  { id:"vapi_api",       label:"Vapi.ai API",               cat:"tools",          desc:"REST API for AI voice agent deployment. Define assistant config (LLM, STT, TTS, prompt) and get a phone number. Handles all orchestration." },
+  { id:"retell_api",     label:"Retell AI API",             cat:"tools",          desc:"WebSocket-based real-time voice API. You provide the LLM logic; Retell handles telephony, STT, and TTS streaming with low-latency optimization." },
+  { id:"ngrok",          label:"ngrok",                     cat:"tools",          desc:"Tunnels localhost to a public URL. Essential for webhook development — lets CPaaS platforms deliver call events to your local dev server." },
+  { id:"sipp",           label:"SIP Testing Tools",         cat:"tools",          desc:"SIPp: generates SIP traffic for load testing. Linphone/Zoiper: softphone clients for manual testing. Essential for validating VoIP configurations." },
+  { id:"wireshark",      label:"Wireshark for SIP/RTP",     cat:"tools",          desc:"Network packet analyzer. SIP dissector shows call flow; RTP stream analysis reveals audio quality issues. The definitive VoIP debug tool." },
+  { id:"docker_telecom", label:"Docker for Telecom",        cat:"tools",          desc:"Containerizing Asterisk, FreeSWITCH, Kamailio deployments. Simplifies development environments and enables Kubernetes-based scaling." },
+];
+
+const links = [
+  ["voip","sip","enables"],["voip","rtp","requires"],["voip","codecs","requires"],
+  ["voip","webrtc","enables"],["voip","latency_jitter","related"],["voip","pstn","related"],
+  ["sip","sip_trunking","enables"],["sip","sbc","requires"],["sip","kamailio","implements"],
+  ["sip","rfc3261","implements"],["rtp","rfc3550","implements"],["sip","stir_shaken","related"],
+  ["webrtc","webrtc_std","implements"],["webrtc","codecs","requires"],
+  ["pstn","ss7","requires"],["pstn","lnp","related"],["pstn","did","related"],["pstn","e164","requires"],
+  ["pbx","cloud_pbx","related"],["pbx","sip_trunking","requires"],
+  ["did","number_prov","requires"],["lnp","nanpa","related"],
+  ["ivr","dtmf","requires"],["ivr","acd","related"],["ivr","ai_agents","related"],
+  ["call_routing","failover","enables"],["call_routing","acd","related"],
+  ["cpaas","twilio_api","part_of"],["cpaas","telnyx_api","part_of"],
+  ["cpaas","vonage_api","part_of"],["cpaas","bandwidth_api","part_of"],
+  ["cpaas","ucaas","related"],["cpaas","ccaas","related"],
+  ["ucaas","cloud_pbx","enables"],["ccaas","acd","enables"],
+  ["softswitch","freeswitch","implements"],["softswitch","asterisk","implements"],
+  ["freeswitch","media_server","part_of"],["asterisk","pbx","enables"],
+  ["kamailio","sbc","related"],["wholesale_voip","tiers","related"],["tiers","peering","related"],
+  ["ss7","enum_tech","related"],["redundancy","failover","enables"],
+  ["docker_telecom","asterisk","enables"],["docker_telecom","freeswitch","enables"],
+  ["a2p","10dlc","requires"],["a2p","tcpa","regulates"],["a2p","sms_agg","requires"],
+  ["10dlc","carrier_filter","related"],["10dlc","shortcodes","related"],
+  ["p2p","a2p","related"],["rcs","mms","related"],
+  ["ai_agents","stt","requires"],["ai_agents","tts","requires"],
+  ["ai_agents","llm_voice","requires"],["ai_agents","nlu","requires"],
+  ["ai_agents","turn_taking","requires"],["ai_agents","interruption","requires"],
+  ["ai_agents","webhook_voice","requires"],["ai_agents","low_latency","requires"],
+  ["ai_agents","vapi","related"],["ai_agents","retell","related"],["ai_agents","bland","related"],
+  ["stt","deepgram","part_of"],["stt","transcription","enables"],
+  ["tts","elevenlabs","part_of"],
+  ["transcription","diarization","related"],["transcription","vcon","enables"],
+  ["transcription","data_retention","related"],
+  ["vcon","vcon_standard","implements"],["vcon","ietf","related"],
+  ["llm_voice","conv_ai","related"],["sentiment","transcription","requires"],
+  ["vapi","vapi_api","implements"],["retell","retell_api","implements"],
+  ["vapi","twilio_api","requires"],["webhook_voice","ngrok","related"],
+  ["fcc","stir_shaken","regulates"],["fcc","tcpa","regulates"],
+  ["fcc","e911","regulates"],["fcc","usf","regulates"],
+  ["fcc","cpni_rule","regulates"],["fcc","calea","regulates"],
+  ["fcc","robocall_regs","regulates"],["fcc","lnp","regulates"],
+  ["stir_shaken","stir_spec","implements"],["stir_shaken","robocall_regs","enables"],
+  ["traced_act","stir_shaken","regulates"],["e911","karis_law","related"],
+  ["telecom_act","clec","enables"],["telecom_act","fcc","related"],
+  ["section_214","fcc","part_of"],["nanpa","number_prov","regulates"],["cpni_rule","cpni","regulates"],
+  ["hipaa","baa","requires"],["hipaa","phi","related"],
+  ["hipaa","healthcare_comms","related"],["hipaa","transcription","regulates"],
+  ["hipaa","data_retention","regulates"],["hipaa","encryption_voip","requires"],
+  ["baa","phi","related"],["cpni","cpni_rule","regulates"],
+  ["ccpa","data_retention","related"],["soc2","encryption_voip","related"],
+  ["gdpr_telecom","data_retention","regulates"],["gdpr_telecom","fcc","related"],
+  ["reseller","var","related"],["reseller","wholesale_voip","requires"],["reseller","cpaas","related"],
+  ["mvno","mvne","requires"],["mrr","churn","related"],["mrr","cac_ltv","related"],
+  ["gross_margin","wholesale_voip","related"],["usage_pricing","cpaas","related"],
+  ["flat_pricing","ucaas","related"],
+  ["ilec","clec","competes"],["ilec","pstn","part_of"],["clec","telecom_act","related"],
+  ["cpaas_market","cpaas","related"],["ai_voice_market","ai_agents","related"],
+  ["ietf","rfc3261","part_of"],["ietf","rfc3550","part_of"],["ietf","vcon_standard","part_of"],
+  ["openapi_cpaas","twilio_api","related"],["sipp","sip","related"],
+  ["wireshark","rtp","related"],["wireshark","sip","related"],
+];
+
+// ════════════════════════════════════════════════════════════
+// STATE
+// ════════════════════════════════════════════════════════════
+
+let learnedSet = new Set(JSON.parse(localStorage.getItem('telecom_learned') || '[]'));
+let selectedNode = null;
+let currentFilter = 'all';
+let searchQuery = '';
+let galaxyMode = false;
+
+function saveLearned() {
+  localStorage.setItem('telecom_learned', JSON.stringify([...learnedSet]));
+}
+
+// ════════════════════════════════════════════════════════════
+// BUILD GRAPH
+// ════════════════════════════════════════════════════════════
+
+const nodeMap = {};
+nodes.forEach(n => { nodeMap[n.id] = n; });
+
+const adjacency = {};
+nodes.forEach(n => { adjacency[n.id] = []; });
+links.forEach(l => {
+  adjacency[l[0]].push({ target: l[1], rel: l[2], dir: 'out' });
+  adjacency[l[1]].push({ target: l[0], rel: l[2], dir: 'in' });
+});
+
+const width  = window.innerWidth;
+const height = window.innerHeight;
+
+const svg = d3.select('#svg-container').attr('width', width).attr('height', height);
+const defs = svg.append('defs');
+
+const pinGrad = defs.append('radialGradient').attr('id','pinGrad')
+  .attr('cx','35%').attr('cy','35%').attr('r','65%');
+pinGrad.append('stop').attr('offset','0%').attr('stop-color','#ff6060');
+pinGrad.append('stop').attr('offset','100%').attr('stop-color','#8b0000');
+
+svg.append('rect').attr('width','100%').attr('height','100%').attr('fill','#2d1a0a');
+svg.append('rect').attr('width','100%').attr('height','100%').attr('fill','#3d2510').attr('opacity',0.4);
+
+const g = svg.append('g').attr('class','main-g');
+
+const zoom = d3.zoom().scaleExtent([0.1, 4])
+  .on('zoom', e => g.attr('transform', e.transform));
+svg.call(zoom);
+
+// Galaxy background group (behind everything)
+const galaxyBgGroup = g.append('g').attr('class','galaxy-bg');
+
+// Cluster starting positions
+const clusterPos = {
+  fundamentals:   { x: width*0.30, y: height*0.30 },
+  sms:            { x: width*0.70, y: height*0.20 },
+  infrastructure: { x: width*0.15, y: height*0.55 },
+  ai:             { x: width*0.65, y: height*0.55 },
+  business:       { x: width*0.45, y: height*0.75 },
+  regulatory:     { x: width*0.25, y: height*0.75 },
+  privacy:        { x: width*0.75, y: height*0.75 },
+  market:         { x: width*0.85, y: height*0.35 },
+  standards:      { x: width*0.50, y: height*0.20 },
+  tools:          { x: width*0.80, y: height*0.60 },
+};
+
+nodes.forEach(n => {
+  const c = clusterPos[n.cat] || { x: width/2, y: height/2 };
+  n.x = c.x + (Math.random() - 0.5) * 200;
+  n.y = c.y + (Math.random() - 0.5) * 200;
+});
+
+const linkData = links.map(l => ({ source: l[0], target: l[1], rel: l[2] }));
+
+const simulation = d3.forceSimulation(nodes)
+  .force('link',      d3.forceLink(linkData).id(d => d.id).distance(90).strength(0.3))
+  .force('charge',    d3.forceManyBody().strength(-280))
+  .force('cluster',   () => {
+    nodes.forEach(n => {
+      const c = clusterPos[n.cat];
+      n.vx += (c.x - n.x) * 0.008;
+      n.vy += (c.y - n.y) * 0.008;
+    });
+  })
+  .force('collision', d3.forceCollide(58))
+  .alphaDecay(0.02);
+
+// ── Links ──
+const linkSel = g.append('g').attr('class','links').selectAll('line')
+  .data(linkData).enter().append('line')
+    .attr('class','link-line')
+    .attr('stroke',         d => REL_COLORS[d.rel] || '#666')
+    .attr('stroke-width',   1.2)
+    .attr('stroke-opacity', 0.35)
+    .attr('stroke-linecap', 'round');
+
+// ── Nodes ──
+const NODE_W = 125, NODE_H = 38;
+
+const nodeSel = g.append('g').attr('class','nodes').selectAll('g')
+  .data(nodes).enter().append('g')
+    .attr('class', d => 'node-card' + (learnedSet.has(d.id) ? ' learned' : ''))
+    .attr('data-id', d => d.id)
+    .call(d3.drag()
+      .on('start', dragStart)
+      .on('drag',  dragging)
+      .on('end',   dragEnd))
+    .on('click',   (e,d) => { e.stopPropagation(); selectNode(d); })
+    .on('dblclick',(e,d) => { e.stopPropagation(); focusNode(d); });
+
+nodeSel.append('rect').attr('class','card-shadow')
+  .attr('x', -NODE_W/2+2).attr('y', -NODE_H/2+2)
+  .attr('width', NODE_W).attr('height', NODE_H)
+  .attr('rx',3).attr('fill','rgba(0,0,0,0.5)');
+
+nodeSel.append('rect').attr('class','card-rect')
+  .attr('x', -NODE_W/2).attr('y', -NODE_H/2)
+  .attr('width', NODE_W).attr('height', NODE_H)
+  .attr('rx',3).attr('fill','#1a1008')
+  .attr('stroke',         d => CATEGORIES[d.cat].color)
+  .attr('stroke-width',   d => learnedSet.has(d.id) ? 2 : 1)
+  .attr('stroke-opacity', d => learnedSet.has(d.id) ? 1 : 0.6)
+  .attr('stroke-dasharray',d=> learnedSet.has(d.id) ? 'none' : '3,2');
+
+nodeSel.append('rect').attr('class','learned-fill')
+  .attr('x', -NODE_W/2).attr('y', -NODE_H/2)
+  .attr('width', NODE_W).attr('height', NODE_H)
+  .attr('rx',3)
+  .attr('fill', d => learnedSet.has(d.id) ? CATEGORIES[d.cat].color : 'transparent')
+  .attr('opacity', 0.08);
+
+nodeSel.append('rect').attr('class','cat-stripe')
+  .attr('x', -NODE_W/2).attr('y', -NODE_H/2)
+  .attr('width', 3).attr('height', NODE_H)
+  .attr('rx',2)
+  .attr('fill', d => CATEGORIES[d.cat].color).attr('opacity', 0.8);
+
+nodeSel.append('text').attr('class','node-label')
+  .attr('text-anchor','middle').attr('dy','0.35em').attr('x',2)
+  .attr('font-size','11px').attr('font-family','Courier New, monospace')
+  .attr('fill', d => learnedSet.has(d.id) ? CATEGORIES[d.cat].color : '#d4b896')
+  .attr('pointer-events','none')
+  .text(d => d.label.length > 17 ? d.label.slice(0,16)+'…' : d.label);
+
+nodeSel.append('circle')
+  .attr('cx',0).attr('cy', -NODE_H/2-4).attr('r',5)
+  .attr('fill','url(#pinGrad)').attr('stroke','#600').attr('stroke-width',0.5);
+
+nodeSel.append('text').attr('class','check-badge')
+  .attr('x', NODE_W/2-9).attr('y', -NODE_H/2+11)
+  .attr('font-size','9px')
+  .attr('fill', d => CATEGORIES[d.cat].color)
+  .attr('opacity', d => learnedSet.has(d.id) ? 1 : 0)
+  .attr('pointer-events','none').text('✓');
+
+svg.on('click', () => clearSelection());
+
+simulation.on('tick', () => {
+  linkSel.attr('x1',d=>d.source.x).attr('y1',d=>d.source.y)
+         .attr('x2',d=>d.target.x).attr('y2',d=>d.target.y);
+  nodeSel.attr('transform', d=>`translate(${d.x},${d.y})`);
+});
+
+// ════════════════════════════════════════════════════════════
+// INTERACTIONS
+// ════════════════════════════════════════════════════════════
+
+function selectNode(d) {
+  selectedNode = d;
+  showTooltip(d);
+  highlightConnections(d);
+}
+
+function focusNode(d) {
+  selectedNode = d;
+  showTooltip(d);
+  highlightConnections(d);
+  const scale = 1.8;
+  const tx = width/2  - d.x * scale;
+  const ty = height/2 - d.y * scale;
+  svg.transition().duration(600).call(
+    zoom.transform, d3.zoomIdentity.translate(tx,ty).scale(scale)
+  );
+}
+
+function clearSelection() {
+  selectedNode = null;
+  document.getElementById('tooltip').style.display = 'none';
+  applyFilters();
+}
+
+function highlightConnections(d) {
+  const connectedIds = new Set([d.id]);
+  adjacency[d.id].forEach(e => connectedIds.add(e.target));
+  nodeSel.style('opacity', n => connectedIds.has(n.id) ? 1 : 0.07);
+  linkSel.style('opacity', l => {
+    const sid = typeof l.source==='object' ? l.source.id : l.source;
+    const tid = typeof l.target==='object' ? l.target.id : l.target;
+    return (sid===d.id || tid===d.id) ? 0.85 : 0.04;
+  });
+}
+
+function showTooltip(d) {
+  document.getElementById('tt-title').textContent = d.label;
+  const badge = document.getElementById('tt-badge');
+  badge.textContent = CATEGORIES[d.cat].label;
+  badge.style.background = CATEGORIES[d.cat].color + '22';
+  badge.style.color = CATEGORIES[d.cat].color;
+  badge.style.border = '1px solid ' + CATEGORIES[d.cat].color + '44';
+  document.getElementById('tt-desc').textContent = d.desc;
+
+  const conns = adjacency[d.id];
+  const connDiv = document.getElementById('tt-connections');
+  if (conns.length > 0) {
+    let html = '<div class="connections-title">Connections (' + conns.length + ')</div>';
+    [...conns].sort((a,b) => a.dir==='out' ? -1 : 1).forEach(e => {
+      const other = nodeMap[e.target];
+      if (!other) return;
+      const rel = e.dir==='out' ? '→ '+e.rel : '← '+e.rel;
+      const dot = REL_COLORS[e.rel] || '#888';
+      html += `<div class="conn-item" onclick="focusNode(nodeMap['${e.target}'])">
+        <span class="conn-dot" style="background:${dot}"></span>
+        <span>${other.label}</span>
+        <span class="conn-label">${rel}</span>
+      </div>`;
+    });
+    connDiv.innerHTML = html;
+  } else { connDiv.innerHTML = ''; }
+
+  const btn = document.getElementById('learn-btn');
+  if (learnedSet.has(d.id)) {
+    btn.textContent = '✓ Learned — click to undo'; btn.classList.add('learned');
+  } else {
+    btn.textContent = 'Mark as Learned'; btn.classList.remove('learned');
+  }
+  document.getElementById('tooltip').style.display = 'block';
+}
+
+function toggleLearned() {
+  if (!selectedNode) return;
+  const id = selectedNode.id;
+  learnedSet.has(id) ? learnedSet.delete(id) : learnedSet.add(id);
+  saveLearned();
+  updateLearnedVisuals();
+  showTooltip(selectedNode);
+  updateProgress();
+}
+
+function updateLearnedVisuals() {
+  nodeSel.select('.card-rect')
+    .attr('stroke-width',    d => learnedSet.has(d.id) ? 2 : 1)
+    .attr('stroke-opacity',  d => learnedSet.has(d.id) ? 1 : 0.6)
+    .attr('stroke-dasharray',d => learnedSet.has(d.id) ? 'none' : '3,2');
+  nodeSel.select('.learned-fill')
+    .attr('fill', d => learnedSet.has(d.id) ? CATEGORIES[d.cat].color : 'transparent');
+  nodeSel.select('.node-label')
+    .attr('fill', d => learnedSet.has(d.id) ? CATEGORIES[d.cat].color : '#d4b896');
+  nodeSel.select('.check-badge')
+    .attr('opacity', d => learnedSet.has(d.id) ? 1 : 0);
+  nodeSel.classed('learned', d => learnedSet.has(d.id));
+}
+
+function updateProgress() {
+  document.getElementById('progress-text').textContent =
+    learnedSet.size + ' / ' + nodes.length + ' learned';
+}
+
+function filterCategory(mode) {
+  currentFilter = mode;
+  document.querySelectorAll('.filter-btn:not(.galaxy-btn)').forEach(b => b.classList.remove('active'));
+  document.getElementById('btn-' + mode).classList.add('active');
+  applyFilters();
+}
+
+function applyFilters() {
+  const q = searchQuery.toLowerCase();
+  const showNode = d => {
+    if (q && !d.label.toLowerCase().includes(q) && !d.desc.toLowerCase().includes(q)) return false;
+    if (currentFilter==='learned'   && !learnedSet.has(d.id)) return false;
+    if (currentFilter==='unlearned' &&  learnedSet.has(d.id)) return false;
+    return true;
+  };
+  nodeSel.style('opacity', d => showNode(d) ? 1 : 0.07);
+  linkSel.style('opacity', l => {
+    const sid = typeof l.source==='object' ? l.source.id : l.source;
+    const tid = typeof l.target==='object' ? l.target.id : l.target;
+    const s = nodeMap[sid], t = nodeMap[tid];
+    if (galaxyMode) {
+      if (!showNode(s) || !showNode(t)) return 0.03;
+      return NODE_GALAXY[sid] !== NODE_GALAXY[tid] ? 0.55 : 0.12;
+    }
+    return (s && t && showNode(s) && showNode(t)) ? 0.35 : 0.03;
+  });
+  if (galaxyMode) updateLinkGalaxyStyles();
+}
+
+document.getElementById('search-input').addEventListener('input', function() {
+  searchQuery = this.value;
+  applyFilters();
+});
+
+// ── Panel toggles ──
+function togglePanel(id) {
+  const body  = document.getElementById(id + '-body');
+  const arrow = document.getElementById(id + '-arrow');
+  const show  = body.style.display === 'none';
+  body.style.display = show ? '' : 'none';
+  arrow.textContent  = show ? '▾' : '▸';
+}
+
+// ── Legend ──
+const legendEl = document.getElementById('legend');
+
+const legendHeader = document.createElement('div');
+legendHeader.className = 'panel-header';
+legendHeader.style.cssText = 'width:100%;margin-bottom:6px;';
+legendHeader.innerHTML = '<strong>Legend</strong><span id="legend-arrow">▾</span>';
+legendHeader.onclick = () => togglePanel('legend');
+legendEl.appendChild(legendHeader);
+
+const legendBody = document.createElement('div');
+legendBody.id = 'legend-body';
+legendBody.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px 12px;width:100%;';
+legendEl.appendChild(legendBody);
+
+Object.entries(CATEGORIES).forEach(([key, val]) => {
+  const div = document.createElement('div');
+  div.className = 'legend-item';
+  div.innerHTML = `<span class="legend-dot" style="background:${val.color}"></span>${val.label}`;
+  div.onclick = e => {
+    e.stopPropagation();
+    searchQuery = searchQuery === '__cat__'+key ? '' : '__cat__'+key;
+    document.getElementById('search-input').value = '';
+    const activeKey = searchQuery ? key : null;
+    const showNode  = d => activeKey ? d.cat === activeKey : true;
+    nodeSel.style('opacity', d => showNode(d) ? 1 : 0.07);
+    linkSel.style('opacity', l => {
+      const sid = typeof l.source==='object' ? l.source.id : l.source;
+      const tid = typeof l.target==='object' ? l.target.id : l.target;
+      const s = nodeMap[sid], t = nodeMap[tid];
+      return (s && t && showNode(s) && showNode(t)) ? 0.35 : 0.03;
+    });
+  };
+  legendBody.appendChild(div);
+});
+
+const relLegendDiv = document.createElement('div');
+relLegendDiv.style.cssText = 'width:100%;border-top:1px solid #3a2a10;padding-top:5px;margin-top:3px;display:flex;flex-wrap:wrap;gap:6px 12px;';
+Object.entries(REL_COLORS).forEach(([rel,color]) => {
+  const span = document.createElement('span');
+  span.style.cssText = `font-size:13px;color:${color};opacity:0.8;`;
+  span.textContent = '— ' + rel;
+  relLegendDiv.appendChild(span);
+});
+legendBody.appendChild(relLegendDiv);
+
+// ── Reset / drag ──
+function resetView() {
+  svg.transition().duration(600).call(zoom.transform, d3.zoomIdentity);
+  clearSelection();
+}
+
+function dragStart(event, d) {
+  if (!event.active) simulation.alphaTarget(0.3).restart();
+  d.fx = d.x; d.fy = d.y;
+}
+function dragging(event, d) { d.fx = event.x; d.fy = event.y; }
+function dragEnd(event, d) {
+  if (!event.active) simulation.alphaTarget(0);
+  if (!galaxyMode) { d.fx = null; d.fy = null; }
+}
+
+// ════════════════════════════════════════════════════════════
+// GALAXY VIEW
+// ════════════════════════════════════════════════════════════
+
+// Which galaxy does each node belong to?
+const NODE_GALAXY = {
+  // VoIP Core
+  voip:'voip', sip:'voip', sip_trunking:'voip', rtp:'voip', webrtc:'voip',
+  pstn:'voip', pbx:'voip', cloud_pbx:'voip', did:'voip', number_prov:'voip',
+  lnp:'voip', tollfree:'voip', e164:'voip', dtmf:'voip', ivr:'voip',
+  acd:'voip', call_routing:'voip', failover:'voip', latency_jitter:'voip',
+  codecs:'voip', a2p:'voip', p2p:'voip', '10dlc':'voip', shortcodes:'voip',
+  tcpa:'voip', carrier_filter:'voip', sms_agg:'voip', rcs:'voip', mms:'voip',
+  // Regulatory / Compliance
+  fcc:'regulatory', stir_shaken:'regulatory', robocall_regs:'regulatory',
+  traced_act:'regulatory', calea:'regulatory', e911:'regulatory',
+  karis_law:'regulatory', usf:'regulatory', section_214:'regulatory',
+  nanpa:'regulatory', telecom_act:'regulatory', cpni_rule:'regulatory',
+  gdpr_telecom:'regulatory',
+  hipaa:'regulatory', baa:'regulatory', phi:'regulatory', cpni:'regulatory',
+  ccpa:'regulatory', data_retention:'regulatory', encryption_voip:'regulatory', soc2:'regulatory',
+  // Infrastructure / Economics
+  cpaas:'infra', ucaas:'infra', ccaas:'infra', wholesale_voip:'infra',
+  tiers:'infra', peering:'infra', ss7:'infra', enum_tech:'infra',
+  media_server:'infra', sbc:'infra', softswitch:'infra', asterisk:'infra',
+  freeswitch:'infra', kamailio:'infra', redundancy:'infra', colocation:'infra',
+  ilec:'infra', clec:'infra', ixc:'infra', reseller:'infra',
+  mvno:'infra', mvne:'infra', var:'infra', usage_pricing:'infra',
+  flat_pricing:'infra', mrr:'infra', churn:'infra', cac_ltv:'infra',
+  gross_margin:'infra', cpaas_market:'infra', ai_voice_market:'infra',
+  healthcare_comms:'infra', smb_market:'infra', nojitter:'infra',
+  // AI / Voice
+  ai_agents:'ai', llm_voice:'ai', stt:'ai', tts:'ai', nlu:'ai',
+  conv_ai:'ai', turn_taking:'ai', interruption:'ai', sentiment:'ai',
+  vcon:'ai', transcription:'ai', diarization:'ai', webhook_voice:'ai',
+  low_latency:'ai', vapi:'ai', retell:'ai', bland:'ai',
+  deepgram:'ai', elevenlabs:'ai',
+  // Developer Tools
+  twilio_api:'devtools', telnyx_api:'devtools', vonage_api:'devtools',
+  bandwidth_api:'devtools', vapi_api:'devtools', retell_api:'devtools',
+  ngrok:'devtools', sipp:'devtools', wireshark:'devtools',
+  docker_telecom:'devtools', ietf:'devtools', rfc3261:'devtools',
+  rfc3550:'devtools', stir_spec:'devtools', webrtc_std:'devtools',
+  openapi_cpaas:'devtools', vcon_standard:'devtools',
+};
+
+const GALAXY_META = {
+  voip:       { label:'VoIP Core',                hub:'voip',       color:'#4a9eff' },
+  regulatory: { label:'Regulatory & Compliance',  hub:'fcc',        color:'#f87171' },
+  infra:      { label:'Infrastructure & Economics',hub:'cpaas',     color:'#a78bfa' },
+  ai:         { label:'AI & Voice',               hub:'ai_agents',  color:'#34d399' },
+  devtools:   { label:'Developer Tools',          hub:'twilio_api', color:'#4ade80' },
+};
+
+function getGalaxyCenters() {
+  const cx = width  / 2;
+  const cy = height / 2;
+  const R  = Math.min(width * 0.40, height * 0.52);
+  // Pentagon: VoIP top, AI upper-right, DevTools lower-right, Infra lower-left, Reg upper-left
+  const order = ['voip', 'ai', 'devtools', 'infra', 'regulatory'];
+  const result = {};
+  order.forEach((k, i) => {
+    const a = (2 * Math.PI * i / 5) - Math.PI / 2;
+    result[k] = { x: cx + R * Math.cos(a), y: cy + R * Math.sin(a) };
+  });
+  return result;
+}
+
+function computeGalaxyPositions() {
+  const centers   = getGalaxyCenters();
+  const positions = {};
+
+  Object.entries(GALAXY_META).forEach(([gkey, gdef]) => {
+    const center = centers[gkey];
+    positions[gdef.hub] = { x: center.x, y: center.y };
+
+    const orbiters = nodes
+      .filter(n => NODE_GALAXY[n.id] === gkey && n.id !== gdef.hub)
+      .sort((a, b) => adjacency[b.id].length - adjacency[a.id].length);
+
+    const rings = [
+      { r: 100, nodes: orbiters.slice(0, 7)  },
+      { r: 182, nodes: orbiters.slice(7, 19) },
+      { r: 258, nodes: orbiters.slice(19)    },
+    ];
+
+    rings.forEach(ring => {
+      ring.nodes.forEach((node, i) => {
+        const a = (2 * Math.PI * i / ring.nodes.length) - Math.PI / 2;
+        positions[node.id] = {
+          x: center.x + ring.r * Math.cos(a),
+          y: center.y + ring.r * Math.sin(a),
+        };
+      });
+    });
+  });
+
+  return positions;
+}
+
+function drawGalaxyBackgrounds(centers) {
+  galaxyBgGroup.selectAll('*').remove();
+
+  Object.entries(GALAXY_META).forEach(([gkey, gdef]) => {
+    const c = centers[gkey];
+
+    // Outer halo
+    galaxyBgGroup.append('circle')
+      .attr('cx', c.x).attr('cy', c.y).attr('r', 280)
+      .attr('fill', gdef.color).attr('opacity', 0.04)
+      .attr('stroke', gdef.color).attr('stroke-width', 1.5)
+      .attr('stroke-opacity', 0.18)
+      .attr('stroke-dasharray', '6,4');
+
+    // Inner core glow
+    galaxyBgGroup.append('circle')
+      .attr('cx', c.x).attr('cy', c.y).attr('r', 115)
+      .attr('fill', gdef.color).attr('opacity', 0.06);
+
+    // Galaxy name label
+    galaxyBgGroup.append('text')
+      .attr('x', c.x).attr('y', c.y - 295)
+      .attr('text-anchor', 'middle')
+      .attr('font-size', '12px')
+      .attr('font-family', 'Courier New, monospace')
+      .attr('fill', gdef.color).attr('opacity', 0.6)
+      .attr('letter-spacing', '2.5px')
+      .text(gdef.label.toUpperCase());
+  });
+}
+
+function updateLinkGalaxyStyles() {
+  linkSel
+    .attr('stroke-opacity', l => {
+      const sid = typeof l.source==='object' ? l.source.id : l.source;
+      const tid = typeof l.target==='object' ? l.target.id : l.target;
+      return NODE_GALAXY[sid] !== NODE_GALAXY[tid] ? 0.55 : 0.12;
+    })
+    .attr('stroke-dasharray', l => {
+      const sid = typeof l.source==='object' ? l.source.id : l.source;
+      const tid = typeof l.target==='object' ? l.target.id : l.target;
+      return NODE_GALAXY[sid] !== NODE_GALAXY[tid] ? '5,4' : null;
+    });
+}
+
+function resetLinkStyles() {
+  linkSel.attr('stroke-opacity', 0.35).attr('stroke-dasharray', null);
+}
+
+// Smooth animation without fighting the force simulation
+function animateNodes(targetPositions, duration, onDone) {
+  simulation.stop();
+  const t0    = performance.now();
+  const start = {};
+  nodes.forEach(n => { start[n.id] = { x: n.x, y: n.y }; });
+
+  function tick(now) {
+    const pct  = Math.min(1, (now - t0) / duration);
+    const ease = pct < 0.5 ? 2*pct*pct : 1 - Math.pow(-2*pct+2,2)/2;
+
+    nodes.forEach(n => {
+      const s = start[n.id];
+      const t = targetPositions[n.id] || s;
+      n.x = s.x + (t.x - s.x) * ease;
+      n.y = s.y + (t.y - s.y) * ease;
+    });
+
+    nodeSel.attr('transform', d => `translate(${d.x},${d.y})`);
+    linkSel.attr('x1',l=>l.source.x).attr('y1',l=>l.source.y)
+           .attr('x2',l=>l.target.x).attr('y2',l=>l.target.y);
+
+    if (pct < 1) { requestAnimationFrame(tick); }
+    else { onDone && onDone(); }
+  }
+  requestAnimationFrame(tick);
+}
+
+function enterGalaxyView() {
+  clearSelection();
+  const positions = computeGalaxyPositions();
+  const centers   = getGalaxyCenters();
+
+  drawGalaxyBackgrounds(centers);
+
+  animateNodes(positions, 900, () => {
+    // Fix all nodes in place
+    nodes.forEach(n => {
+      const p = positions[n.id];
+      if (p) { n.fx = p.x; n.fy = p.y; n.x = p.x; n.y = p.y; }
+    });
+    simulation.alpha(0).restart();
+    updateLinkGalaxyStyles();
+
+    // Zoom to fit the pentagon + outer halos
+    const R     = Math.min(width * 0.40, height * 0.52) + 300;
+    const scale = Math.min(width, height) / (2 * R) * 0.92;
+    const tx    = (width  - scale * width)  / 2;
+    const ty    = (height - scale * height) / 2;
+    svg.transition().duration(600).call(
+      zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale)
+    );
+  });
+}
+
+function exitGalaxyView() {
+  clearSelection();
+  galaxyBgGroup.selectAll('*').remove();
+  nodes.forEach(n => { n.fx = null; n.fy = null; });
+  resetLinkStyles();
+  simulation.alpha(0.5).restart();
+  svg.transition().duration(600).call(zoom.transform, d3.zoomIdentity);
+}
+
+function toggleGalaxyView() {
+  galaxyMode = !galaxyMode;
+  document.getElementById('btn-galaxy').classList.toggle('active', galaxyMode);
+  galaxyMode ? enterGalaxyView() : exitGalaxyView();
+}
+
+// ── Init ──
+updateLearnedVisuals();
+updateProgress();
+
+window.nodeMap = nodeMap;
+window.focusNode = focusNode;
+</script>
+</body>
+</html>
